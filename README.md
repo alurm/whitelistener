@@ -7,7 +7,7 @@ whitelistener from <source> to <destination>
 ```
 
 The standard input must be a list of allowed IPv6 addresses, one per line.
-Lines starting with a pound sign are ignored.
+Empty lines and lines starting with a pound sign are ignored.
 
 Example: `echo ::1 | whitelistener from [::1]:1024 to [::1]:8000`
 

@@ -51,7 +51,7 @@ func parse(r io.Reader, args ...string) (configuration, error) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if len(line) == 0 || line[0] != '#' {
+		if len(line) != 0 && line[0] != '#' {
 			res.whitelist[line] = true
 		}
 	}
