@@ -1,16 +1,18 @@
-# Whitelistener: a TCP/IPv6 to TCP/IP reverse proxy with an IPv6 whitelist
+# Whitelistener: a TCP/IP to TCP/IP reverse proxy with a whitelist
 
-Usage: `whitelistener from <source> to <destination> < <whitelist>`
+## Usage
+
+```sh
+whitelistener from <source> to <destination>
+```
 
 The standard input must be a list of allowed IPv6 addresses, one per line.
+Lines starting with a pound sign are ignored.
 
-Lines starting with a hash character are treated as comments.
+Example: `echo ::1 | whitelistener from [::1]:1024 to [::1]:8000`
 
-Example usage: `echo ::1 | whitelistener from [::1]:1024 to [::1]:8000`
+## Development
 
-Building: `go build`
+To build run `go build`, to test run `go test`.
 
-Testing: `go test`
-
-License: MIT
-
+License: MIT.

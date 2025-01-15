@@ -5,21 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 )
-
-func log(args ...any) {
-	fmt.Fprint(os.Stderr, args...)
-}
-
-func usage() {
-	log("Whitelistener: a TCP/IPv6 to TCP/IP reverse proxy with an IPv6 whitelist.\n")
-	log("Usage: whitelistener from <source> to <destination> < <whitelist>\n")
-	log("The standard input must be a list of allowed IPv6 addresses, one per line.\n")
-	log("Lines starting with a hash character are treated as comments.\n")
-	log("Example usage: echo ::1 | whitelistener from [::1]:1024 to [::1]:8080\n")
-	os.Exit(1)
-}
 
 type configuration struct {
 	source      string
@@ -27,7 +13,9 @@ type configuration struct {
 	whitelist   map[string]bool
 }
 
-func parse(r io.Reader, args ...string) (result configuration) {
+func parse(r io.Reader, args ...string) (configuration, error) {
+	var res configuration
+
 	// Parse args.
 
 	var haveSource, haveDestination bool
@@ -39,44 +27,46 @@ func parse(r io.Reader, args ...string) (result configuration) {
 		switch key {
 		case "from":
 			haveSource = true
-			result.source = value
+			res.source = value
 		case "to":
 			haveDestination = true
-			result.destination = value
+			res.destination = value
 		default:
-			usage()
+			return res, fmt.Errorf("an unknown flag: %s", key)
 		}
 	}
 
-	if !haveSource || !haveDestination {
-		usage()
+	if !haveSource {
+		return res, fmt.Errorf("the source must be provided")
+	}
+
+	if !haveDestination {
+		return res, fmt.Errorf("the destination must be provided")
 	}
 
 	// Read the whitelist.
 
-	result.whitelist = map[string]bool{}
+	res.whitelist = map[string]bool{}
 
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if len(line) == 0 || line[0] != '#' {
-			result.whitelist[line] = true
+			res.whitelist[line] = true
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		log("An error occurred during reading the whitelist:", err)
-		os.Exit(1)
+		return res, fmt.Errorf("during reading the whitelist: %v", err)
 	}
 
-	return
+	return res, nil
 }
 
-func handle(client net.Conn, destination string) {
+func handle(client net.Conn, destination string) error {
 	d, err := net.Dial("tcp", destination)
 	if err != nil {
-		log("An error occurred while dialing the destination:", err)
-		os.Exit(1)
+		return fmt.Errorf("while dialing the destination: %v", err)
 	}
 
 	go func() {
@@ -88,4 +78,6 @@ func handle(client net.Conn, destination string) {
 		io.Copy(d, client)
 		d.Close()
 	}()
+
+	return nil
 }
