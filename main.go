@@ -6,11 +6,11 @@ import (
 	"os"
 )
 
-//go:embed README.md
+//go:embed README.txt
 var readme string
 
 func main() {
-	if err := whitelisten(); err != nil {
+	if err := listen(); err != nil {
 		fmt.Fprintf(os.Stderr, "An error: %v.\n\n%s", err, readme)
 		os.Exit(1)
 	}

@@ -6,68 +6,125 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
+	"strings"
 )
+
+type arguments struct {
+	source      string
+	destination string
+	listPath    string
+	unsafe      bool
+	receiver    []string
+}
 
 type configuration struct {
 	source      string
 	destination string
-	whitelist   map[string]bool
-	unsafe bool
+	receiver    []string
+	// If nil, all connections are allowed.
+	list map[string]bool
 }
 
-func parse(r io.Reader, args ...string) (configuration, error) {
-	var res configuration
+func parseArgs(args ...string) (arguments, error) {
+	var res arguments
 
-	// Parse args.
-
-	var haveSource, haveDestination bool
-
-	for i := 0; i+1 < len(args); i += 2 {
-		key := args[i]
-		value := args[i+1]
+For:
+	for len(args) != 0 {
+		key := args[0]
+		args = args[1:]
 
 		switch key {
 		case "from":
-			haveSource = true
-			res.source = value
+			if len(args) == 0 {
+				return res, fmt.Errorf("expected the source address")
+			}
+			res.source = args[0]
+			args = args[1:]
 		case "to":
-			haveDestination = true
-			res.destination = value
-		case "option":
-			switch value {
-			case "unsafe":
-				res.unsafe = true
-			default:
-				return res, fmt.Errorf("an unknown option: %s", value)
+			if len(args) == 0 {
+				return res, fmt.Errorf("expected the destination address")
 			}
+			res.destination = args[0]
+			args = args[1:]
+		case "list":
+			if len(args) == 0 {
+				return res, fmt.Errorf("expected the whitelist")
+			}
+			res.listPath = args[0]
+			args = args[1:]
+		case "unsafe":
+			res.unsafe = true
+		case "receiver:":
+			if len(args) == 0 {
+				return res, fmt.Errorf("expected args")
+			}
+			res.receiver = args
+			break For
 		default:
-			return res, fmt.Errorf("an unknown flag: %s", key)
+			return res, fmt.Errorf("an unknown argument: %s", key)
 		}
 	}
 
-	if !haveSource {
-		return res, fmt.Errorf("the source must be provided")
+	if res.source == "" {
+		return res, fmt.Errorf("the source must be specified")
 	}
 
-	if !haveDestination {
-		return res, fmt.Errorf("the destination must be provided")
+	if res.destination == "" {
+		return res, fmt.Errorf("the destination must be specified")
 	}
 
-	// If we are allowing all connections (res.unsafe), the whitelist is not even read.
-	if !res.unsafe {
-		res.whitelist = map[string]bool{}
+	if res.unsafe && res.listPath != "" {
+		return res, fmt.Errorf("can't specify both \"unsafe\" and \"list\"")
+	}
 
-		scanner := bufio.NewScanner(r)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if len(line) != 0 && line[0] != '#' {
-				res.whitelist[line] = true
-			}
+	if !res.unsafe && res.listPath == "" {
+		return res, fmt.Errorf("either \"unsafe\" or \"list\" have to be specified")
+	}
+
+	return res, nil
+}
+
+func parseList(s string) map[string]bool {
+	list := map[string]bool{}
+
+	scanner := bufio.NewScanner(strings.NewReader(string(s)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if len(line) != 0 && line[0] != '#' {
+			list[line] = true
+		}
+	}
+
+	return list
+}
+
+func parse(argsSlice ...string) (configuration, error) {
+	args, err := parseArgs(argsSlice...)
+
+	if err != nil {
+		return configuration{}, err
+	}
+
+	res := configuration{
+		source:      args.source,
+		destination: args.destination,
+		receiver:    args.receiver,
+	}
+
+	if !args.unsafe {
+		file, err := os.Open(args.listPath)
+
+		if err != nil {
+			return res, fmt.Errorf("during opening the list: %v", err)
 		}
 
-		if err := scanner.Err(); err != nil {
-			return res, fmt.Errorf("during reading the whitelist: %v", err)
+		content, err := io.ReadAll(file)
+		if err != nil {
+			return res, fmt.Errorf("during reading the list: %v", err)
 		}
+
+		res.list = parseList(string(content))
 	}
 
 	return res, nil
@@ -92,10 +149,33 @@ func handle(client net.Conn, destination string) error {
 	return nil
 }
 
-func whitelisten() error {
-	conf, err := parse(os.Stdin, os.Args[1:]...)
+func listen() error {
+	conf, err := parse(os.Args[1:]...)
 	if err != nil {
 		return err
+	}
+
+	if len(conf.receiver) != 0 {
+		name := conf.receiver[0]
+		conf.receiver = conf.receiver[1:]
+		go func() {
+			cmd := exec.Command(name, conf.receiver...)
+			// Fix me: inherit ALL file descriptors.
+			cmd.Stdin = os.Stdin
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			err := cmd.Run()
+			if err == nil {
+				os.Exit(0)
+			}
+			switch err := err.(type) {
+			case *exec.ExitError:
+				os.Exit(err.ExitCode())
+			default:
+				fmt.Fprintf(os.Stderr, "An error: receiver: %v.\n\n\n", err)
+				os.Exit(1)
+			}
+		}()
 	}
 
 	server, err := net.Listen("tcp", conf.source)
@@ -115,12 +195,10 @@ func whitelisten() error {
 			return fmt.Errorf("a bug: a remote address %v didn't split into host and port parts: %v", address, err)
 		}
 
-		if conf.unsafe || conf.whitelist[host] {
+		if conf.list == nil || conf.list[host] {
 			handle(client, conf.destination)
 		} else {
 			client.Close()
 		}
 	}
-
-	return nil
 }

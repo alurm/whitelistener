@@ -1,26 +1,39 @@
 package main
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
-func TestParse(t *testing.T) {
-	r := strings.NewReader(
-		`
+func TestParseArgs(t *testing.T) {
+	args, err := parseArgs(
+		"list", "l",
+		"from", "[::1]:1024",
+		"to", "[::1]:9999",
+		"receiver:", "a", "b",
+	)
+
+	if err != nil ||
+		args.source != "[::1]:1024" ||
+		args.destination != "[::1]:9999" ||
+		args.listPath != "l" ||
+		args.unsafe != false ||
+		len(args.receiver) != 2 ||
+		args.receiver[0] != "a" ||
+		args.receiver[1] != "b" {
+		t.Fail()
+	}
+}
+
+func TestParseList(t *testing.T) {
+	l := `
 # Localhost.
 ::1
 # A device.
 200:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx
-`,
-	)
-	conf, err := parse(r, "from", "[::1]:1024", "to", "[::1]:9999")
-	if err != nil || conf.source != "[::1]:1024" || conf.destination != "[::1]:9999" {
-		t.Fail()
-	}
+`
+
+	list := parseList(l)
 	whitelist := []string{"::1", "200:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx"}
 	for _, v := range whitelist {
-		if !conf.whitelist[v] {
+		if !list[v] {
 			t.Fail()
 		}
 	}
