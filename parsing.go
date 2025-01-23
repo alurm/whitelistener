@@ -1,11 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"bufio"
-	"strings"
-	"os"
+	"fmt"
 	"io"
+	"net/netip"
+	"os"
+	"strings"
 )
 
 type arguments struct {
@@ -14,14 +15,6 @@ type arguments struct {
 	listPath    string
 	unsafe      bool
 	receiver    []string
-}
-
-type configuration struct {
-	source      string
-	destination string
-	receiver    []string
-	// If nil, all connections are allowed.
-	list map[string]bool
 }
 
 func parseArgs(args ...string) (arguments, error) {
@@ -83,18 +76,24 @@ For:
 	return res, nil
 }
 
-func parseList(s string) map[string]bool {
-	list := map[string]bool{}
+func parseList(s string) (map[netip.Addr]bool, error) {
+	list := map[netip.Addr]bool{}
 
+	i := 1
 	scanner := bufio.NewScanner(strings.NewReader(string(s)))
 	for scanner.Scan() {
 		line := scanner.Text()
 		if len(line) != 0 && line[0] != '#' {
-			list[line] = true
+			address, err := netip.ParseAddr(line)
+			if err != nil {
+				return list, fmt.Errorf("line %v: failed to parse the address %v: %v", i, line, err)
+			}
+			list[address] = true
 		}
+		i++
 	}
 
-	return list
+	return list, nil
 }
 
 func parse(argsSlice ...string) (configuration, error) {
@@ -122,7 +121,12 @@ func parse(argsSlice ...string) (configuration, error) {
 			return res, fmt.Errorf("during reading the list: %v", err)
 		}
 
-		res.list = parseList(string(content))
+		list, err := parseList(string(content))
+		if err != nil {
+			return res, err
+		}
+
+		res.list = list
 	}
 
 	return res, nil

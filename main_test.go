@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"net/netip"
+	"testing"
+)
 
 func TestParseArgs(t *testing.T) {
 	args, err := parseArgs(
@@ -27,12 +30,26 @@ func TestParseList(t *testing.T) {
 # Localhost.
 ::1
 # A device.
-200:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx
+200::
 `
 
-	list := parseList(l)
-	whitelist := []string{"::1", "200:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx"}
-	for _, v := range whitelist {
+	list, err := parseList(l)
+	if err != nil {
+		t.Fail()
+	}
+
+	strings := []string{"::1", "200:0::"}
+	addresses := []netip.Addr{}
+
+	for _, v := range strings {
+		address, err := netip.ParseAddr(v)
+		if err != nil {
+			t.Fail()
+		}
+		addresses = append(addresses, address)
+	}
+
+	for _, v := range addresses {
 		if !list[v] {
 			t.Fail()
 		}
